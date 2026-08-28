@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         Bili.Dynamic.AutoDel
 // @namespace    https://github.com/
-// @version      2026.08.28
+// @version      1.0.0
 // @description  扫描指定日期范围内的B站转发动态，预览并手动选择删除。
 // @author       monSteRhhe
+// @updateURL    https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
+// @downloadURL  https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
 // @match        https://bilibili.com/*
 // @match        https://*.bilibili.com/*
 // @icon         https://www.bilibili.com/favicon.ico
