@@ -32,11 +32,9 @@
 ![预览窗口](./screenshots/Preview-Window.png)
 ## 安装
 
-1. 在 Microsoft Edge 中安装 Tampermonkey（篡改猴）扩展。
-2. 打开脚本文件：
-   [`bili-dynamic-autodel.user.js`](./bili-dynamic-autodel.user.js)
-3. 点击“安装”。
-4. 登录 Bilibili 后，在任意 Bilibili 页面打开油猴菜单，选择
+1. 在 Microsoft Edge 中安装篡改猴后，点击下面的链接：
+[点击安装](https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js)
+2. 登录 Bilibili 后，在**个人动态**页面打开油猴菜单，选择
    **选择指定日期之间的动态**。
 
 ## 使用说明
