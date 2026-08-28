@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bili.Dynamic.AutoDel
 // @namespace    https://github.com/lurenwu37/bilibili-dynamic-del
-// @version      1.0.0
+// @version      1.0.1
 // @description  扫描指定日期范围内的B站转发动态，预览并手动选择删除。
 // @author       lurenwu37 (based on monSteRhhe)
 // @updateURL    https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
@@ -732,8 +732,10 @@
             return null;
         }
 
-        // "源动态已被作者删除" 可能表现为 orig 为 null 或 orig.id_str 为 null
-        if (data.orig == null || data.orig.id_str == null) {
+        // 原创动态没有有效的 orig；只有存在源动态 ID 的转发动态才进入候选名单
+        if (!data.orig || typeof data.orig !== 'object' ||
+            typeof data.orig.id_str !== 'string' ||
+            data.orig.id_str.trim() === '') {
             return null;
         }
 
@@ -768,6 +770,7 @@
             return {
                 item: data,
                 repost_id: String(data.id_str),
+                repost_timestamp: dyn_timestamp,
                 author_name: String(author.name || '未知用户'),
                 author_mid: String(author.mid || ''),
                 repost_date: timestampToDate(dyn_timestamp),
@@ -870,13 +873,24 @@
             preview_modal.remove();
         }
 
+        // 按用户转发动态的发布时间稳定排序：从新到旧
+        candidates.sort((a, b) => {
+            let timestamp_difference = b.repost_timestamp - a.repost_timestamp;
+            if (timestamp_difference !== 0) {
+                return timestamp_difference;
+            }
+            return b.repost_id.localeCompare(a.repost_id);
+        });
+
         let selected = new Set(),
+            is_descending = true,
             overlay = document.createElement('div'),
             content = document.createElement('div'),
             list = document.createElement('div'),
             summary = document.createElement('span'),
             select_all_button = document.createElement('button'),
             clear_button = document.createElement('button'),
+            reverse_button = document.createElement('button'),
             cancel_button = document.createElement('button'),
             delete_button = document.createElement('button');
 
@@ -889,7 +903,7 @@
         let header = document.createElement('div');
         header.className = 'bili-autodel-preview-header';
         let title = document.createElement('strong');
-        title.textContent = '预览删除：指定日期范围';
+        title.textContent = '请选择需要删除的动态';
         header.append(title, summary);
 
         function updateSummary() {
@@ -967,8 +981,33 @@
                 }
                 body.append(meta, reason, link);
                 item.append(checkbox, body);
+                item.dataset.repostId = candidate.repost_id;
                 list.appendChild(item);
             }
+        }
+
+        /**
+         * 切换预览列表的时间顺序
+         */
+        function updatePreviewOrder() {
+            candidates.sort((a, b) => {
+                let timestamp_difference = b.repost_timestamp - a.repost_timestamp;
+                if (timestamp_difference !== 0) {
+                    return is_descending ? timestamp_difference : -timestamp_difference;
+                }
+                let id_difference = b.repost_id.localeCompare(a.repost_id);
+                return is_descending ? id_difference : -id_difference;
+            });
+
+            candidates.forEach(candidate => {
+                let item = list.querySelector(
+                    '[data-repost-id="' + candidate.repost_id + '"]'
+                );
+                if (item) {
+                    list.appendChild(item);
+                }
+            });
+            reverse_button.textContent = is_descending ? '倒序' : '恢复正序';
         }
 
         let footer = document.createElement('div');
@@ -977,9 +1016,10 @@
         selection_actions.className = 'bili-autodel-preview-actions';
         select_all_button.textContent = '全选';
         clear_button.textContent = '全不选';
+        reverse_button.textContent = '倒序';
         cancel_button.textContent = '取消';
         delete_button.className = 'danger';
-        selection_actions.append(select_all_button, clear_button);
+        selection_actions.append(select_all_button, clear_button, reverse_button);
 
         let right_actions = document.createElement('div');
         right_actions.className = 'bili-autodel-preview-actions';
@@ -1000,6 +1040,10 @@
             });
             selected.clear();
             updateSummary();
+        });
+        reverse_button.addEventListener('click', function() {
+            is_descending = !is_descending;
+            updatePreviewOrder();
         });
         cancel_button.addEventListener('click', closePreviewModal);
         overlay.addEventListener('click', function(event) {
