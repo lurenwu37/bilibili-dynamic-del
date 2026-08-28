@@ -3,7 +3,7 @@
 // @namespace    https://github.com/lurenwu37/bilibili-dynamic-del
 // @version      1.0.0
 // @description  扫描指定日期范围内的B站转发动态，预览并手动选择删除。
-// @author       monSteRhhe
+// @author       lurenwu37 (based on monSteRhhe)
 // @updateURL    https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
 // @downloadURL  https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
 // @match        https://bilibili.com/*
@@ -20,6 +20,8 @@
 // @noframes
 // ==/UserScript==
 /* globals axios */
+
+// Original project author: monSteRhhe
 
 (function() {
     'use strict';
