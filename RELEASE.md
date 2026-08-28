@@ -1,4 +1,4 @@
-# Bili.Dynamic.AutoDel 2026.08.28
+# Bili.Dynamic.AutoDel v1.0.0
 
 这是基于原作者 **monSteRhhe** 的
 [bilibili-dynamic-del](https://github.com/monSteRhhe/bilibili-dynamic-del)
