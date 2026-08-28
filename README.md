@@ -13,7 +13,7 @@
 ## 功能
 
 当前版本只保留以下两个油猴菜单：
-![功能菜单](./screenshots/Function-Menu.png)
+
 1. **选择指定日期之间的动态**
    - 输入开始日期和结束日期。
    - 扫描该日期范围内的转发动态。
@@ -28,13 +28,27 @@
    - 删除任务执行过程中可以暂停和继续。
    - 扫描阶段建议使用扫描窗口中的“停止扫描并预览”按钮。
    - 删除请求之间会保留时间间隔，以降低触发 Bilibili 接口频率限制的概率。
+
+## 界面截图
+
+### 油猴菜单
+
+![油猴菜单](./screenshots/Function-Menu.png)
+
+### 扫描窗口
+
 ![扫描窗口](./screenshots/Scanning-Window.png)
+
+### 预览窗口
+
 ![预览窗口](./screenshots/Preview-Window.png)
+
 ## 安装
 
-1. 在 Microsoft Edge 中安装篡改猴后，点击下面的链接：
-[点击安装](https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js)
-2. 登录 Bilibili 后，在**个人动态**页面打开油猴菜单，选择
+1. 在 Microsoft Edge 中安装 Tampermonkey（篡改猴）扩展。
+2. [点击安装](https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js)
+3. 点击“安装”。
+4. 登录 Bilibili 后，在**个人动态**页面打开油猴菜单，选择
    **选择指定日期之间的动态**。
 
 ## 使用说明
