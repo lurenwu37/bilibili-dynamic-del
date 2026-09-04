@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bili.Dynamic.AutoDel
 // @namespace    https://github.com/lurenwu37/bilibili-dynamic-del
-// @version      1.0.1
+// @version      1.1.0
 // @description  扫描指定日期范围内的B站转发动态，预览并手动选择删除。
 // @author       lurenwu37 (based on monSteRhhe)
 // @updateURL    https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
@@ -29,12 +29,17 @@
     // 防止同一时间重复启动多个删除任务
     let is_running = false;
     let is_paused = false;
+    let delete_stop_requested = false;
     let is_scanning = false;
     let scan_stop_requested = false;
     let pause_button = null;
     let last_request_time = 0;
     let preview_modal = null;
     let scan_modal = null;
+    let delete_progress_panel = null;
+    let task_summary_modal = null;
+    let delete_stats = null;
+    let active_date_range = null;
     let scan_stats = {
         pages: 0,
         scanned: 0,
@@ -49,24 +54,6 @@
      * 弹窗样式
      */
     let style = `
-        .bili-autodel-pause-button {
-            position: fixed;
-            right: 24px;
-            bottom: 24px;
-            z-index: 2147483646;
-            display: none;
-            cursor: pointer;
-            border: 0;
-            border-radius: 6px;
-            padding: 8px 14px;
-            color: #fff;
-            background: #00aeec;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, .2);
-            font-size: 14px;
-        }
-        .bili-autodel-pause-button.is-paused {
-            background: #fb7299;
-        }
         .bili-autodel-scan {
             position: fixed;
             inset: 0;
@@ -280,34 +267,155 @@
             cursor: not-allowed;
             opacity: .5;
         }
+        .bili-autodel-delete-progress {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 2147483645;
+            width: min(300px, calc(100vw - 48px));
+            box-sizing: border-box;
+            padding: 14px 16px;
+            color: #18191c;
+            background: #fff;
+            border: 1px solid #e3e5e7;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+        }
+        .bili-autodel-delete-progress-header,
+        .bili-autodel-summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .bili-autodel-delete-progress-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .bili-autodel-delete-progress-close,
+        .bili-autodel-delete-progress-pause,
+        .bili-autodel-summary-close,
+        .bili-autodel-summary-failures-toggle {
+            cursor: pointer;
+            border: 0;
+            border-radius: 4px;
+            padding: 6px 10px;
+            color: #61666d;
+            background: #f1f2f3;
+            font-size: 12px;
+        }
+        .bili-autodel-delete-progress-pause {
+            color: #fff;
+            background: #00aeec;
+        }
+        .bili-autodel-delete-progress-pause.is-paused {
+            background: #fb7299;
+        }
+        .bili-autodel-delete-progress-track {
+            height: 8px;
+            margin: 14px 0 10px;
+            overflow: hidden;
+            background: #e3e5e7;
+            border-radius: 4px;
+        }
+        .bili-autodel-delete-progress-bar {
+            width: 0;
+            height: 100%;
+            background: #00aeec;
+            transition: width .2s ease;
+        }
+        .bili-autodel-delete-progress-status,
+        .bili-autodel-delete-progress-counts,
+        .bili-autodel-summary-line {
+            color: #61666d;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .bili-autodel-delete-progress-counts {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .bili-autodel-summary {
+            position: fixed;
+            inset: 0;
+            z-index: 2147483647;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+            background: rgba(0, 0, 0, .45);
+        }
+        .bili-autodel-summary-content {
+            width: min(480px, calc(100vw - 32px));
+            max-height: min(680px, calc(100vh - 32px));
+            box-sizing: border-box;
+            padding: 20px;
+            overflow-y: auto;
+            color: #18191c;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, .25);
+        }
+        .bili-autodel-summary-header strong {
+            font-size: 18px;
+        }
+        .bili-autodel-summary-lines {
+            margin-top: 14px;
+        }
+        .bili-autodel-summary-line + .bili-autodel-summary-line {
+            margin-top: 4px;
+        }
+        .bili-autodel-summary-failures {
+            display: none;
+            max-height: 220px;
+            margin-top: 10px;
+            padding: 8px 10px;
+            overflow-y: auto;
+            background: #f6f7f8;
+            border-radius: 4px;
+        }
+        .bili-autodel-summary-failures.is-open {
+            display: block;
+        }
+        .bili-autodel-summary-failure {
+            padding: 8px 0;
+            border-bottom: 1px solid #e3e5e7;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .bili-autodel-summary-failure:last-child {
+            border-bottom: 0;
+        }
+        .bili-autodel-summary-failure a {
+            color: #00aeec;
+            text-decoration: none;
+        }
+        .bili-autodel-summary-footer {
+            margin-top: 16px;
+            text-align: right;
+        }
+        .bili-autodel-summary-close {
+            color: #fff;
+            background: #00aeec;
+        }
         `;
 
     GM_addStyle(style);
 
     /**
-     * 创建暂停按钮
-     */
-    function createPauseButton() {
-        pause_button = document.createElement('button');
-        pause_button.className = 'bili-autodel-pause-button';
-        pause_button.type = 'button';
-        pause_button.title = '暂停或继续当前删除任务';
-        pause_button.addEventListener('click', togglePause);
-        document.body.appendChild(pause_button);
-        updatePauseButton();
-    }
-
-    /**
      * 更新暂停按钮状态
      */
     function updatePauseButton() {
-        if (!pause_button) {
+        if (!delete_progress_panel || !delete_progress_panel.pause_button) {
             return;
         }
 
-        pause_button.style.display = is_running && !is_scanning ? 'block' : 'none';
+        pause_button = delete_progress_panel.pause_button;
         pause_button.classList.toggle('is-paused', is_paused);
-        pause_button.textContent = is_paused ? '继续脚本' : '暂停脚本';
+        pause_button.textContent = is_paused ? '继续删除' : '暂停删除';
+        pause_button.title = is_paused ? '继续删除任务' : '暂停删除任务';
     }
 
     /**
@@ -325,7 +433,12 @@
 
         is_paused = !is_paused;
         updatePauseButton();
-        sendNotification(is_paused ? '任务已暂停。' : '任务已继续。');
+        updateDeleteProgressPanel(delete_stats || {
+            processed: 0,
+            success: 0,
+            failed: 0,
+            skipped: 0
+        });
     }
 
     /**
@@ -334,6 +447,171 @@
     async function waitWhilePaused() {
         while (is_paused) {
             await new Promise(resolve => setTimeout(resolve, 300));
+        }
+    }
+
+    function formatDuration(ms) {
+        let total_seconds = Math.max(0, Math.round(ms / 1000)),
+            minutes = Math.floor(total_seconds / 60),
+            seconds = total_seconds % 60;
+        return minutes + ' 分 ' + seconds + ' 秒';
+    }
+
+    function createDeleteProgressPanel(total) {
+        closeDeleteProgressPanel();
+
+        let panel = document.createElement('div'),
+            header = document.createElement('div'),
+            title = document.createElement('strong'),
+            close_button = document.createElement('button'),
+            pause_control = document.createElement('button'),
+            track = document.createElement('div'),
+            bar = document.createElement('div'),
+            status = document.createElement('div'),
+            counts = document.createElement('div');
+
+        panel.className = 'bili-autodel-delete-progress';
+        header.className = 'bili-autodel-delete-progress-header';
+        title.className = 'bili-autodel-delete-progress-title';
+        title.textContent = '删除进度';
+        close_button.className = 'bili-autodel-delete-progress-close';
+        close_button.type = 'button';
+        close_button.textContent = '关闭';
+        close_button.addEventListener('click', handleDeleteProgressClose);
+        pause_control.className = 'bili-autodel-delete-progress-pause';
+        pause_control.type = 'button';
+        pause_control.addEventListener('click', togglePause);
+        track.className = 'bili-autodel-delete-progress-track';
+        bar.className = 'bili-autodel-delete-progress-bar';
+        status.className = 'bili-autodel-delete-progress-status';
+        counts.className = 'bili-autodel-delete-progress-counts';
+        track.appendChild(bar);
+        header.append(title, pause_control, close_button);
+        panel.append(header, track, status, counts);
+        document.body.appendChild(panel);
+        delete_progress_panel = {
+            panel,
+            bar,
+            status,
+            counts,
+            pause_button: pause_control,
+            total
+        };
+        updatePauseButton();
+        updateDeleteProgressPanel({ processed: 0, success: 0, failed: 0, skipped: 0 });
+    }
+
+    function updateDeleteProgressPanel(stats, status_text) {
+        if (!delete_progress_panel) {
+            return;
+        }
+
+        let total = delete_progress_panel.total,
+            processed = stats.processed || 0,
+            percentage = total > 0 ? Math.round(processed * 100 / total) : 100;
+        delete_progress_panel.bar.style.width = percentage + '%';
+        delete_progress_panel.status.textContent = status_text ||
+            (is_paused ? '已暂停' : '正在删除');
+        delete_progress_panel.counts.textContent =
+            '已处理 ' + processed + ' / ' + total +
+            '　成功 ' + (stats.success || 0) +
+            '　失败 ' + (stats.failed || 0) +
+            '　跳过 ' + (stats.skipped || 0);
+    }
+
+    function closeDeleteProgressPanel() {
+        if (delete_progress_panel) {
+            delete_progress_panel.panel.remove();
+            delete_progress_panel = null;
+        }
+    }
+
+    function handleDeleteProgressClose() {
+        if (is_running && is_paused) {
+            delete_stop_requested = true;
+            is_paused = false;
+        }
+        closeDeleteProgressPanel();
+    }
+
+    function showTaskSummary(summary) {
+        closeTaskSummary();
+
+        let overlay = document.createElement('div'),
+            content = document.createElement('div'),
+            header = document.createElement('div'),
+            title = document.createElement('strong'),
+            lines = document.createElement('div'),
+            failures_toggle = document.createElement('button'),
+            failures = document.createElement('div'),
+            footer = document.createElement('div'),
+            close_button = document.createElement('button');
+
+        task_summary_modal = overlay;
+        overlay.className = 'bili-autodel-summary';
+        content.className = 'bili-autodel-summary-content';
+        header.className = 'bili-autodel-summary-header';
+        title.textContent = '删除任务总结';
+        header.appendChild(title);
+        lines.className = 'bili-autodel-summary-lines';
+        [
+            '最终状态：' + summary.status,
+            '日期范围：' + summary.start_date + ' 至 ' + summary.end_date,
+            '本次选中：' + summary.total + ' 条',
+            '已处理：' + summary.processed + ' 条',
+            '删除成功：' + summary.success + ' 条',
+            '删除失败：' + summary.failed + ' 条',
+            '重复 ID 跳过：' + summary.skipped + ' 条',
+            '总耗时：' + formatDuration(summary.duration_ms)
+        ].forEach(text => {
+            let line = document.createElement('div');
+            line.className = 'bili-autodel-summary-line';
+            line.textContent = text;
+            lines.appendChild(line);
+        });
+
+        if (summary.failures.length > 0) {
+            failures_toggle.className = 'bili-autodel-summary-failures-toggle';
+            failures_toggle.type = 'button';
+            failures_toggle.textContent = '查看失败原因';
+            failures_toggle.addEventListener('click', function() {
+                let is_open = failures.classList.toggle('is-open');
+                failures_toggle.textContent = is_open ? '收起失败原因' : '查看失败原因';
+            });
+            failures.className = 'bili-autodel-summary-failures';
+            summary.failures.forEach(failure => {
+                let item = document.createElement('div'),
+                    link = document.createElement('a');
+                item.className = 'bili-autodel-summary-failure';
+                link.href = 'https://www.bilibili.com/opus/' + failure.id;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = failure.id;
+                item.append('动态：', link, document.createElement('br'),
+                    '原因：' + failure.reason);
+                failures.appendChild(item);
+            });
+        }
+
+        footer.className = 'bili-autodel-summary-footer';
+        close_button.className = 'bili-autodel-summary-close';
+        close_button.type = 'button';
+        close_button.textContent = '关闭';
+        close_button.addEventListener('click', closeTaskSummary);
+        footer.appendChild(close_button);
+        content.append(header, lines);
+        if (summary.failures.length > 0) {
+            content.append(failures_toggle, failures);
+        }
+        content.append(footer);
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+    }
+
+    function closeTaskSummary() {
+        if (task_summary_modal) {
+            task_summary_modal.remove();
+            task_summary_modal = null;
         }
     }
 
@@ -643,10 +921,6 @@
             'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space';
         let candidates = [];
 
-        if (offset === '') {
-            sendNotification('开始扫描指定日期范围内的动态。');
-        }
-
         while (true) {
             if (scan_stop_requested) {
                 return candidates;
@@ -868,7 +1142,7 @@
      * 显示预览并选择删除窗口
      * @param {Array} candidates 删除候选列表
      */
-    function showPreviewModal(candidates) {
+    function showPreviewModal(candidates, date_range) {
         if (preview_modal) {
             preview_modal.remove();
         }
@@ -895,6 +1169,9 @@
             delete_button = document.createElement('button');
 
         preview_modal = overlay;
+        candidates.forEach(candidate => {
+            candidate.date_range = date_range;
+        });
         overlay.className = 'bili-autodel-preview';
         content.className = 'bili-autodel-preview-content';
         list.className = 'bili-autodel-preview-list';
@@ -1095,26 +1372,87 @@
 
         is_running = true;
         is_paused = false;
+        delete_stop_requested = false;
         last_request_time = 0;
         deleted_ids = new Set();
         updatePauseButton();
-        let success_count = 0;
+        delete_stats = {
+            total: candidates.length,
+            processed: 0,
+            success: 0,
+            failed: 0,
+            skipped: 0,
+            failures: [],
+            start_time: Date.now(),
+            start_date: active_date_range ? active_date_range.start_date : '',
+            end_date: active_date_range ? active_date_range.end_date : ''
+        };
+        createDeleteProgressPanel(candidates.length);
 
         try {
             for (let candidate of candidates) {
                 await waitWhilePaused();
-                let deleted = await deleteDynamic(candidate.item);
-                if (deleted) {
-                    success_count++;
+                if (delete_stop_requested) {
+                    break;
                 }
+                let result = await deleteDynamic(candidate.item);
+                delete_stats.processed++;
+                if (result.success) {
+                    delete_stats.success++;
+                } else if (result.skipped) {
+                    delete_stats.skipped++;
+                } else {
+                    delete_stats.failed++;
+                    delete_stats.failures.push({
+                        id: result.id,
+                        reason: result.reason
+                    });
+                }
+                updateDeleteProgressPanel(delete_stats);
                 await sleep(ITEM_INTERVAL_MS);
             }
 
-            sendNotification('预览任务完成：成功删除 ' + success_count +
-                ' / ' + candidates.length + ' 条。');
+            showTaskSummary({
+                status: delete_stop_requested ? '已停止' :
+                    (delete_stats.failed === 0 ? '全部完成' :
+                        (delete_stats.success > 0 ? '部分失败' : '全部失败')),
+                start_date: delete_stats.start_date,
+                end_date: delete_stats.end_date,
+                total: delete_stats.total,
+                processed: delete_stats.processed,
+                success: delete_stats.success,
+                failed: delete_stats.failed,
+                skipped: delete_stats.skipped,
+                failures: delete_stats.failures,
+                duration_ms: Date.now() - delete_stats.start_time
+            });
+            if (!delete_stop_requested) {
+                sendNotification('预览任务完成：成功删除 ' + delete_stats.success +
+                    ' / ' + candidates.length + ' 条。', 3000);
+            }
+        } catch (error) {
+            console.error('[' + GM_info.script.name + '] 删除任务异常：', error);
+            showTaskSummary({
+                status: '任务异常中止',
+                start_date: delete_stats.start_date,
+                end_date: delete_stats.end_date,
+                total: delete_stats.total,
+                processed: delete_stats.processed,
+                success: delete_stats.success,
+                failed: delete_stats.failed,
+                skipped: delete_stats.skipped,
+                failures: delete_stats.failures.concat({
+                    id: '任务级异常',
+                    reason: error && error.message ? error.message : '未知异常'
+                }),
+                duration_ms: Date.now() - delete_stats.start_time
+            });
         } finally {
+            closeDeleteProgressPanel();
+            delete_stats = null;
             is_running = false;
             is_paused = false;
+            delete_stop_requested = false;
             updatePauseButton();
         }
     }
@@ -1130,13 +1468,16 @@
 
         if (!csrf) {
             sendNotification('未找到 bili_jct，无法删除动态。');
-            return false;
+            return { success: false, skipped: false, id: String(item.id_str || ''), reason: '未找到 bili_jct' };
         }
         if (!re_id_str || deleted_ids.has(re_id_str)) {
-            return false;
+            return { success: false, skipped: true, id: String(re_id_str || ''), reason: '重复动态 ID 或 ID 无效' };
         }
 
         await waitWhilePaused();
+        if (delete_stop_requested) {
+            return { success: false, skipped: true, id: String(re_id_str), reason: '任务已停止' };
+        }
         deleted_ids.add(re_id_str);
         console.log('[' + GM_info.script.name + ']',
             'https://www.bilibili.com/opus/' + re_id_str); // 控制台输出动态网址
@@ -1145,6 +1486,9 @@
             let delete_api = 'https://api.bilibili.com/x/dynamic/feed/operate/remove';
             // B站当前接口要求 JSON 请求体，csrf 放在 URL 参数中
             await waitBeforeRequest();
+            if (delete_stop_requested) {
+                return { success: false, skipped: true, id: String(re_id_str), reason: '任务已停止' };
+            }
             let response = await axios.post(delete_api, {
                 dyn_id_str: re_id_str
             }, {
@@ -1160,19 +1504,29 @@
             });
 
             if (isApiSuccess(response)) {
-                sendNotification(re_id_str + ' 删除成功。');
-                return true;
+                return { success: true, skipped: false, id: re_id_str, reason: '' };
             }
 
             console.error('[' + GM_info.script.name + '] 删除失败：',
                 JSON.stringify(response.data));
             sendNotification(re_id_str + ' 删除失败：' +
                 (response.data.message || response.data.code || '未知错误'));
+            return {
+                success: false,
+                skipped: false,
+                id: re_id_str,
+                reason: response.data.message || response.data.code || '未知错误'
+            };
         } catch (error) {
             console.error('[' + GM_info.script.name + '] 删除请求失败：', error);
             sendNotification(re_id_str + ' 删除请求失败。');
+            return {
+                success: false,
+                skipped: false,
+                id: re_id_str,
+                reason: error && error.message ? error.message : '请求失败'
+            };
         }
-        return false;
     }
 
     /**
@@ -1184,12 +1538,12 @@
      * 显示通知
      * @param {string} msg 发送的通知消息
      */
-    function sendNotification(msg) {
+    function sendNotification(msg, timeout) {
         GM_notification({
             text: msg,
             title: GM_info.script.name,
             image: GM_info.script.icon,
-            timeout: 1500
+            timeout: typeof timeout === 'number' ? timeout : 1500
         });
     }
 
@@ -1258,7 +1612,8 @@
                 }
                 await sleep(scan_stop_requested ? 300 : 1200);
                 closeScanModal();
-                showPreviewModal(candidates);
+                 active_date_range = input;
+                 showPreviewModal(candidates, input);
             }
         } catch (error) {
             console.error('[' + GM_info.script.name + '] 扫描任务失败：', error);
@@ -1286,9 +1641,4 @@
         togglePause();
     });
 
-    if (document.body) {
-        createPauseButton();
-    } else {
-        window.addEventListener('DOMContentLoaded', createPauseButton, { once: true });
-    }
 })();
