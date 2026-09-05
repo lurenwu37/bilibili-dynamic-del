@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bili.Dynamic.AutoDel
 // @namespace    https://github.com/lurenwu37/bilibili-dynamic-del
-// @version      1.1.0
+// @version      1.1.1
 // @description  扫描指定日期范围内的B站转发动态，预览并手动选择删除。
 // @author       lurenwu37 (based on monSteRhhe)
 // @updateURL    https://raw.githubusercontent.com/lurenwu37/bilibili-dynamic-del/main/bili-dynamic-autodel.user.js
@@ -29,6 +29,7 @@
     // 防止同一时间重复启动多个删除任务
     let is_running = false;
     let is_paused = false;
+    let terminate_requested = false;
     let delete_stop_requested = false;
     let is_scanning = false;
     let scan_stop_requested = false;
@@ -419,7 +420,7 @@
     }
 
     /**
-     * 暂停 / 继续当前任务
+     * 暂停 / 继续当前删除任务
      */
     function togglePause() {
         if (!is_running) {
@@ -446,8 +447,25 @@
      */
     async function waitWhilePaused() {
         while (is_paused) {
+            if (terminate_requested) {
+                return;
+            }
             await new Promise(resolve => setTimeout(resolve, 300));
         }
+    }
+
+    function terminateScript() {
+        terminate_requested = true;
+        is_paused = false;
+        scan_stop_requested = true;
+        delete_stop_requested = true;
+        closeScanModal();
+        closePreviewModal();
+        closeDeleteProgressPanel();
+        closeTaskSummary();
+        sendNotification('脚本已终止，页面即将刷新。', 5000);
+        // 等待通知完整显示后再刷新，否则页面刷新会立即销毁通知。
+        setTimeout(() => window.location.reload(), 5200);
     }
 
     function formatDuration(ms) {
@@ -922,7 +940,7 @@
         let candidates = [];
 
         while (true) {
-            if (scan_stop_requested) {
+            if (scan_stop_requested || terminate_requested) {
                 return candidates;
             }
             await waitWhilePaused();
@@ -930,7 +948,7 @@
             let response;
             try {
                 await waitBeforeRequest();
-                if (scan_stop_requested) {
+                if (scan_stop_requested || terminate_requested) {
                     return candidates;
                 }
                 response = await axios.get(dynamics_api, {
@@ -961,10 +979,13 @@
 
             // 逐条检查，确保扫描进度和暂停状态可控
             for (let data of items_list) {
-                if (scan_stop_requested) {
+                if (scan_stop_requested || terminate_requested) {
                     return candidates;
                 }
                 await waitWhilePaused();
+                if (scan_stop_requested || terminate_requested) {
+                    return candidates;
+                }
                 let candidate = await inspectDynamic(data, date_range);
                 if (candidate) {
                     candidates.push(candidate);
@@ -1371,6 +1392,7 @@
         }
 
         is_running = true;
+        terminate_requested = false;
         is_paused = false;
         delete_stop_requested = false;
         last_request_time = 0;
@@ -1392,7 +1414,7 @@
         try {
             for (let candidate of candidates) {
                 await waitWhilePaused();
-                if (delete_stop_requested) {
+                if (delete_stop_requested || terminate_requested) {
                     break;
                 }
                 let result = await deleteDynamic(candidate.item);
@@ -1412,6 +1434,9 @@
                 await sleep(ITEM_INTERVAL_MS);
             }
 
+            if (terminate_requested) {
+                return;
+            }
             showTaskSummary({
                 status: delete_stop_requested ? '已停止' :
                     (delete_stats.failed === 0 ? '全部完成' :
@@ -1426,7 +1451,7 @@
                 failures: delete_stats.failures,
                 duration_ms: Date.now() - delete_stats.start_time
             });
-            if (!delete_stop_requested) {
+            if (!delete_stop_requested && !terminate_requested) {
                 sendNotification('预览任务完成：成功删除 ' + delete_stats.success +
                     ' / ' + candidates.length + ' 条。', 3000);
             }
@@ -1475,7 +1500,7 @@
         }
 
         await waitWhilePaused();
-        if (delete_stop_requested) {
+        if (delete_stop_requested || terminate_requested) {
             return { success: false, skipped: true, id: String(re_id_str), reason: '任务已停止' };
         }
         deleted_ids.add(re_id_str);
@@ -1486,7 +1511,7 @@
             let delete_api = 'https://api.bilibili.com/x/dynamic/feed/operate/remove';
             // B站当前接口要求 JSON 请求体，csrf 放在 URL 参数中
             await waitBeforeRequest();
-            if (delete_stop_requested) {
+            if (delete_stop_requested || terminate_requested) {
                 return { success: false, skipped: true, id: String(re_id_str), reason: '任务已停止' };
             }
             let response = await axios.post(delete_api, {
@@ -1591,6 +1616,7 @@
         }
 
         is_running = true;
+        terminate_requested = false;
         is_paused = false;
         is_scanning = true;
         scan_stop_requested = false;
@@ -1605,15 +1631,17 @@
                 input
             );
             if (Array.isArray(candidates)) {
-                if (scan_stop_requested) {
+                if (scan_stop_requested || terminate_requested) {
                     stopScanModal(candidates.length);
                 } else {
                     finishScanModal(candidates.length);
                 }
-                await sleep(scan_stop_requested ? 300 : 1200);
+                await sleep(scan_stop_requested || terminate_requested ? 300 : 1200);
                 closeScanModal();
-                 active_date_range = input;
-                 showPreviewModal(candidates, input);
+                if (!terminate_requested) {
+                    active_date_range = input;
+                    showPreviewModal(candidates, input);
+                }
             }
         } catch (error) {
             console.error('[' + GM_info.script.name + '] 扫描任务失败：', error);
@@ -1635,10 +1663,10 @@
     });
 
     /**
-     * 暂停 / 继续当前删除任务
+     * 终止脚本当前的全部任务
      */
-    GM_registerMenuCommand('暂停 / 继续当前任务', () => {
-        togglePause();
+    GM_registerMenuCommand('终止脚本', () => {
+        terminateScript();
     });
 
 })();
